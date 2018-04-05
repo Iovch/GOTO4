@@ -1,15 +1,16 @@
 /*
- * GOTO4.ino Written by Igor Ovchinnikov 03/09/2016
+ * GOTO4.ino Written by Igor Ovchinnikov 16/09/2016
  */
 
 #include <LiquidCrystal_I2C.h>
 
 LiquidCrystal_I2C lcd(0x27,16,2);
 
-#include "Config.h"
+#include "Config4_5.h"
 
 int imStepsXPS = iStepsXPS*iXStepX; //Микрошагов в секунду на двигателе X
 int imStepsYPS = iStepsYPS*iYStepX; //Микрошагов в секунду на двигателе Y
+int imStepsZPS = iStepsZPS*iZStepX; //Микрошагов в секунду на двигателе Z
 
 unsigned long ulSPRA = iStepsDX*dRDX*iXStepX; //Микрошагов двигателя X на полный оборот оси прямого восхождения
 unsigned long ulSPDE = iStepsDY*dRDY*iYStepX; //Микрошагов двигателя Y на полный оборот оси склонений
@@ -18,8 +19,6 @@ const unsigned long StarMSPS=86164091; //Милисекунд в Звездны�
 
 double udRAStepsPMS=double(ulSPRA)/double(StarMSPS); //Микрошагов двигателя X на 1 мс
 
-int iStDX = -1;      //Исходное направление шага двигателя Х
-int iStDY =  1;      //Исходное направление шага двигателя Y
 int iMovement = 0;   //Может пригодиться 
 int iLastMovement=0; //Может пригодиться
 
@@ -31,12 +30,15 @@ boolean bRun    = true;   //Трекинг включен изначально
 boolean bLCD    = false;  //LCD врет
 boolean bForceX = false;  //Ускоренный режим Х
 boolean bForceY = false;  //Ускоренный режим Y
+boolean bForceZ = false;  //Ускоренный режим Z
 boolean bAlignment=false; //Монтировка не выровнена
+boolean bFocus=false;     //Фокусер выключен
 
 unsigned long ulRA=0;   //Текущее (исходное) значение прямого восхождения
 unsigned long ulDE=0;   //Текущее (исходное) значение склонения
 unsigned long ulToRA=0; //Целевое значение прямого восхождения
 unsigned long ulToDE=0; //Целевое значение склонения
+unsigned long ulFomSt=0; //Текущий шаг фокусера 
 
 const unsigned long MVRA = 0xFFFFFFFF;  //Максимальное значение величины прямого восхождения
 const unsigned long MVDE = 0xFFFFFFFF;  //Максимальное значение величины склонения
@@ -53,10 +55,11 @@ String STR= "", STR1="", STR2="";
 String LCDString1="  Arduino GOTO4 ";
 String LCDString2="  Ready to Use  ";
 
-#include "GOTO4.h"
+#include "GOTO4_5.h"
 
 int AskControl()
 {
+  AscFoSw();
   return AskJOY();
 }
 
@@ -145,6 +148,26 @@ int Force_Y(boolean bForce)
   }
 }
 
+int Force_Z(boolean bForce)
+{
+  int iZSX=0;
+  if(!bForceZ&& bForce) //Включаем полношаговый режим
+  {
+    iZSX = 1; //Кратность шага драйвера Z
+    digitalWrite(DZ_FORCE_PIN, LOW);
+    imStepsZPS = iStepsZPS*iZSX; //Шагов в секунду на двигателе Z
+           bForceZ=true;
+   }
+  if(bForceZ && !bForce) //Включаем микрошаговый режим
+  {
+    iZSX = iZStepX; //Кратность шага драйвера Z
+    digitalWrite(DZ_FORCE_PIN, HIGH);
+    imStepsZPS = 500; //Микрошагов в секунду на двигателе Z
+         bForceZ=false;
+  }
+}
+
+
 void To_PRADEC(void)
 {
   int DirectRA=0;
@@ -220,12 +243,26 @@ void reaction () //Обработка команд ПУ
     iKey=AskControl();
     if ((iKey &   4)==  4 && iStDX!=0) {Force_X(false); Stepper_X_step(-iStDX); iMovement=iMovement |   4;} // Микрошаг назад
     if ((iKey &  64)== 64 && iStDX!=0) {Force_X(true);  Stepper_X_step(-iStDX); iMovement=iMovement |  64;} // Полный шаг назад
+    if ((iKey &   1)==  1 && iStDX!=0) {Force_X(false); Stepper_X_step( iStDX); iMovement=iMovement |   1;} // Микрошаг вперед
+    if ((iKey &  16)== 16 && iStDX!=0) {Force_X(true);  Stepper_X_step( iStDX); iMovement=iMovement |  16;} // Полный шаг вперед
+    if(!bFocus)
+        {
     if ((iKey &   8)==  8 && iStDY!=0) {Force_Y(false); Stepper_Y_step( iStDY); iMovement=iMovement |   8;} // Микрошаг вниз
     if ((iKey & 128)==128 && iStDY!=0) {Force_Y(true);  Stepper_Y_step( iStDY); iMovement=iMovement | 128;} // Полный шаг вниз
     if ((iKey &   2)==  2 && iStDY!=0) {Force_Y(false); Stepper_Y_step(-iStDY); iMovement=iMovement |   2;} // Микрошаг вверх
     if ((iKey &  32)== 32 && iStDY!=0) {Force_Y(true);  Stepper_Y_step(-iStDY); iMovement=iMovement |  32;} // Полный шаг вверх    
-    if ((iKey &   1)==  1 && iStDX!=0) {Force_X(false); Stepper_X_step( iStDX); iMovement=iMovement |   1;} // Микрошаг вперед
-    if ((iKey &  16)== 16 && iStDX!=0) {Force_X(true);  Stepper_X_step( iStDX); iMovement=iMovement |  16;} // Полный шаг вперед
+     }
+   else
+     {
+      if ((iKey &   8)==  8 && iStDZ!=0 && ulFoSt<=FOC_MAX_STEPS*iZStepX)
+       {Force_Z (false); Stepper_Z_step( iStDZ); ulFomSt+=1; iMovement=iMovement |   8;} // Микрошаг фокусера F+
+      if ((iKey & 128)==128 && iStDZ!=0 && ulFomSt<=FOC_MAX_STEPS*iZStepX)
+       {Force_Z (true);  Stepper_Z_step( iStDZ); ulFoSt+=iZStepX; iMovement=iMovement | 128;} // Полный шаг фокусера F+
+      if ((iKey &   2)==  2 && iStDZ!=0 && !FoEnd())
+       {Force_Z (false); Stepper_Z_step(-iStDZ); ulFomSt-=1; iMovement=iMovement |   2;} // Микрошаг фокусера F-
+      if ((iKey &  32)== 32 && iStDZ!=0 && !FoEnd())
+       {Force_Z (true);  Stepper_Z_step(-iStDZ); ulFoSt-=iZStepX; iMovement=iMovement |  32;} // Полный шаг фокусера F-
+     }
     if ((iKey & 256)==256) 
      {
      if(!bRun) {bRun=true;  bLCD=false; bForceX = true; Force_X(false); ulMilisec=millis();} //Включить  ведение  (Tracking ON)
@@ -240,31 +277,42 @@ void reaction () //Обработка команд ПУ
 
 void setup()
 {
-  int i;
   lcd.init();           
   lcd.backlight();
-  pinMode(ENABLE_XYZ_PIN,  OUTPUT);    // ENABLE XYZ PIN
-  digitalWrite(ENABLE_XYZ_PIN, LOW);   // LOW
-  pinMode(DX_STEP_PIN,  OUTPUT);       // DX STEP PIN
-  digitalWrite(DX_STEP_PIN, LOW);      // LOW
-  pinMode(DX_DIR_PIN,  OUTPUT);        // DX DIR PIN
-  digitalWrite(DX_DIR_PIN, LOW);       // LOW
-  pinMode(DX_FORCE_PIN,  OUTPUT);      // DX FORCE PIN
-  digitalWrite(DX_FORCE_PIN, HIGH);    // HIGH
-  pinMode(DY_STEP_PIN,  OUTPUT);       // DY STEP PIN
-  digitalWrite(DY_STEP_PIN, LOW);      // LOW
-  pinMode(DY_DIR_PIN,  OUTPUT);        // DY DIR PIN
-  digitalWrite(DY_DIR_PIN, LOW);       // LOW
-  pinMode(DY_FORCE_PIN,  OUTPUT);      // DY FORCE PIN
-  digitalWrite(DY_FORCE_PIN, HIGH);    // HIGH
+  pinMode(ENABLE_XYZ_PIN,  OUTPUT);  // ENABLE XYZ PIN
+  digitalWrite(ENABLE_XYZ_PIN, LOW); // LOW
+  pinMode(DX_STEP_PIN,  OUTPUT);     // DX STEP PIN
+  digitalWrite(DX_STEP_PIN, LOW);    // LOW
+  pinMode(DX_DIR_PIN,  OUTPUT);      // DX DIR PIN
+  digitalWrite(DX_DIR_PIN, LOW);     // LOW
+  pinMode(DX_FORCE_PIN,  OUTPUT);    // DX FORCE PIN
+  digitalWrite(DX_FORCE_PIN, HIGH);  // HIGH
+  pinMode(DY_STEP_PIN,  OUTPUT);     // DY STEP PIN
+  digitalWrite(DY_STEP_PIN, LOW);    // LOW
+  pinMode(DY_DIR_PIN,  OUTPUT);      // DY DIR PIN
+  digitalWrite(DY_DIR_PIN, LOW);     // LOW
+  pinMode(DY_FORCE_PIN,  OUTPUT);    // DY FORCE PIN
+  digitalWrite(DY_FORCE_PIN, HIGH);  // HIGH
+  pinMode(DZ_STEP_PIN,  OUTPUT);     // DZ STEP PIN
+  digitalWrite(DZ_STEP_PIN, LOW);    // LOW
+  pinMode(DZ_DIR_PIN,  OUTPUT);      // DZ DIR PIN
+  digitalWrite(DZ_DIR_PIN, LOW);     // LOW
+  pinMode(DZ_FORCE_PIN,  OUTPUT);    // DZ FORCE PIN
+  digitalWrite(DZ_FORCE_PIN, HIGH);  // HIGH
+  pinMode(LIHT_FOC_PIN, OUTPUT);     // Пин светодиода фокусера 
+  analogWrite(LIHT_FOC_PIN,0);       // выключен
+  pinMode(SW_FOC_SENCE, INPUT_PULLUP); // Сенсор кнопки фокусера
   pinMode(SW_JOY_SENCE, INPUT_PULLUP); // Сенсор кнопки джойстика
-  pinMode(X_JOY_SENCE,  INPUT_PULLUP); // Сенсор оси X джойстика
-  pinMode(Y_JOY_SENCE,  INPUT_PULLUP); // Сенсор оси Y джойстика
+  pinMode(X_JOY_SENCE, INPUT);         // Сенсор оси X джойстика
+  pinMode(Y_JOY_SENCE, INPUT);         // Сенсор оси Y джойстика
+  if(FOC_END_LOG==HIGH) pinMode(END_FOC_PIN, INPUT); //Сенсор ограничителя фокусера
+  else pinMode(END_FOC_PIN, INPUT_PULLUP);           //
   pinMode(13,  OUTPUT);  // LED на плате ардуино
   digitalWrite(13, LOW); // Выключен
+  FoStart();
   Serial.begin(9600);    // Подключаем COM порт
   Serial.flush();        // Сбрасываем содержимое COM порта
-  ulMilisec=millis();    // Фиксируем время начала работы
+  ulMilisec=millis();     // Фиксируем время начала работы
  }
 
 void loop()
@@ -273,7 +321,7 @@ void loop()
  long StepsNeed=0;
  long RaIncNeed=0;
  STR = GetString();
- if(!bDebug) action(STR);
+ action(STR);
  reaction ();
  LoopTime=millis()-ulMilisec;
  if(bRun)
@@ -287,7 +335,7 @@ void loop()
    ulMilisec+=double(StepsNeed)/udRAStepsPMS; // Виртуальное время трекера
    digitalWrite(13, LOW); // Тушим LCD
   }
- if (bDebug) {Serial.print(" ulLoops "); Serial.print(ulLoops); Serial.print("  "); Serial.println("");}
+ if (bDebug) {Serial.print(" StepsNeed "); Serial.print(StepsNeed); Serial.print(" udRAStepsPMS "); Serial.println(udRAStepsPMS);}
  }
  else
  {
@@ -304,5 +352,5 @@ void loop()
   } 
  }
  LCDPrint();
- if(ulLoops<=5000) ulLoops++;
 }
+
