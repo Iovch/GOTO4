@@ -14,9 +14,7 @@ int imStepsYPS = iStepsYPS*iYStepX; //Микрошагов в секунду н�
 unsigned long ulSPRA = iStepsDX*dRDX*iXStepX; //Микрошагов двигателя X на полный оборот оси прямого восхождения
 unsigned long ulSPDE = iStepsDY*dRDY*iYStepX; //Микрошагов двигателя Y на полный оборот оси склонений
 
-//const unsigned long StarMSPS=86164091; //Милисекунд в Звездных сутках
-// const unsigned long StarMSPS=86400000; //Милисекунд в Солнечных сутках
-const unsigned long StarMSPS=89317792; //Милисекунд в Лунных сутках
+const unsigned long StarMSPS=86164091; //Милисекунд в Звездных сутках
 
 double udRAStepsPMS=double(ulSPRA)/double(StarMSPS); //Микрошагов двигателя X на 1 мс
 
