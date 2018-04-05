@@ -1,10 +1,6 @@
 /*
- * GOTO4.h Written by Igor Ovchinnikov 03/09/2016
+ * GOTO4_6.h Written by Igor Ovchinnikov 18/07/2016
  */
-
-boolean bJOYenable=false;
-int iJOY_X0=512, iJOY_Y0=512;
-long ulLoops=0;
  
 long Stepper_step(long ipSteps, unsigned uStepPin, unsigned uDirPin, unsigned uStepsPS)
 {
@@ -37,6 +33,26 @@ void Stepper_Y_step(int ipSteps)
   Stepper_step(ipSteps, DY_STEP_PIN, DY_DIR_PIN, imStepsYPS);
 }
 
+void Stepper_Z_step(int ipSteps)
+{
+  Stepper_step(ipSteps, DZ_STEP_PIN, DZ_DIR_PIN, imStepsZPS);
+}
+
+void AscFoSw(void)
+{
+ if(analogRead(SW_FOC_SENCE)<200)
+ {
+  bFocus=true;
+  analogWrite(LIHT_FOC_PIN,150); // Светодиод фокусера включен
+ }
+ else
+ {
+  bFocus=false;
+  analogWrite(LIHT_FOC_PIN,0); // Светодиод фокусера выключен
+ }
+}
+
+
 // Функция int AskJoy() возвращает при ее вызове следующие значения:
 
 //    0 - когда ничего не надо делать
@@ -54,34 +70,23 @@ int AskJOY()
 {
   int iA1=0, iA2=0, iA3=0;
   int iRetValue=0;
-  
+
   iA1 = analogRead(X_JOY_SENCE);
   iA2 = analogRead(Y_JOY_SENCE);
   iA3 = analogRead(SW_JOY_SENCE);
-
-  if(bJOYenable)
-  {
-  if(iA1<25)                         { iRetValue=iRetValue | 16; } // Полный шаг X+
-  if(iA1>=25 && iA1 < (iJOY_X0-12))  { iRetValue=iRetValue |  1; } // Микрошаг X+
-  if(iA1>(iJOY_X0+12) && iA1<=1000)  { iRetValue=iRetValue |  4; } // Микрошаг X-
-  if(iA1>1000)                       { iRetValue=iRetValue | 64; } // Полный шаг X-
+    
+  if(iA1<15)                { iRetValue=iRetValue | 16; } // Полный шаг X+
+  if(iA1>=15 && iA1 < 470)  { iRetValue=iRetValue |  1; } // Микрошаг X+
+  if(iA1>575 && iA1<=1000)  { iRetValue=iRetValue |  4; } // Микрошаг X-
+  if(iA1>1000)              { iRetValue=iRetValue | 64; } // Полный шаг X-
   
-  if(iA2<25)                         { iRetValue=iRetValue | 32; } // Полный шаг Y+
-  if(iA2>=25  && iA2 < (iJOY_Y0-12)) { iRetValue=iRetValue |  2; } // Микрошаг Y+
-  if(iA2>(iJOY_Y0+12)  && iA2<=1000) { iRetValue=iRetValue |  8; } // Микрошаг Y-
-  if(iA2>1000)                       { iRetValue=iRetValue | 128;} // Полный шаг Y-
+  if(iA2<15)                { iRetValue=iRetValue | 32; } // Полный шаг Y+
+  if(iA2>=15  && iA2 < 470) { iRetValue=iRetValue |  2; } // Микрошаг Y+
+  if(iA2>575  && iA2<=1000) { iRetValue=iRetValue |  8; } // Микрошаг Y-
+  if(iA2>1000)              { iRetValue=iRetValue | 128;} // Полный шаг Y-
 
   if(iA3<500) {iRetValue=iRetValue | 256; delay(250);}    // Включить/отключить трекинг
-  }
-  else
-  {
-   if((iA1<1000) && (iA2<1000) && (ulLoops>=3000) && (ulLoops<5000))
-   {
-    bJOYenable=true; //Джойстик обнаружен
-    iJOY_X0 = iA1;
-    iJOY_Y0 = iA2;
-   }
-  }
+
   return iRetValue;
 }
 
@@ -149,8 +154,8 @@ void HexRaToString(unsigned long ulRaVal, unsigned long ulMaxRaVal)
   LCDString1=String("Ra="+String(iRaH)+"h"+String(iRaM)+"m"+String(iRaS)+"s");
   switch (iStDX)
   {
-  case -1: {LCDString1=LCDString1+" N"; break;}
-  case  1: {LCDString1=LCDString1+" S"; break;}
+  case -1: {LCDString1=LCDString1+" S"; break;}
+  case  1: {LCDString1=LCDString1+" N"; break;}
   }
 }
 
@@ -207,8 +212,8 @@ void LCDPrint()
    }
    else
    {
-    if (iStDY== 1) LCDString1="   N/W or S/E   "; //Телескоп слева от полярной оси
-    if (iStDY==-1) LCDString1="   N/E or S/W   "; //Телескоп справа от полярной оси
+    if (iStDY==-1) LCDString1="   N/W or S/E   "; //Телескоп слева от полярной оси
+    if (iStDY== 1) LCDString1="   N/E or S/W   "; //Телескоп справа от полярной оси
     if (iStDY== 0) LCDString1=" Arduino GOTO4  "; //Телескоп не сориентирован по склонению
     if (iStDX== 0) LCDString1+=" RAERR"; //Не задано направление ведения телескопа
     if (bRun){LCDString2=" TRACKING"; if(iStDX>0) LCDString2+=" SOUTH"; if(iStDX<0) LCDString2+=" NORHT";}
@@ -265,5 +270,25 @@ void LCDCOR (int pKey)
  {
  
  }
+}
+
+// Добавлено в версии 4_6:
+
+boolean FoStart()
+{
+  boolean bRetVal=false;
+  int iAF = analogRead(FO_SENCE_PIN);
+  if (iAF < 25  && FO_START_VAL == LOW ) bRetVal=true;
+  if (iAF > 998 && FO_START_VAL == HIGH) bRetVal=true;
+  return bRetVal;
+}
+
+void FoInit(void)
+{
+  while (!FoStart())
+  {
+    Stepper_Z_step(-iStDZ);
+  }
+  ulFomSts=0;
 }
 
